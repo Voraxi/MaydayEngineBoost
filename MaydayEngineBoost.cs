@@ -16,7 +16,7 @@ using UnityEngine.UI;
 
 namespace MaydayEngineBoost
 {
-    [BepInPlugin(PluginId, "Mayday Engine Boost", "1.5.0")]
+    [BepInPlugin(PluginId, "Mayday Engine Boost", "1.5.1")]
     public sealed class EngineBoostPlugin : BasePlugin
     {
         private const string PluginId = "local.mayday.engineboost";
@@ -34,7 +34,7 @@ namespace MaydayEngineBoost
                 "ThrustMultiplier",
                 1.25f,
                 new ConfigDescription(
-                    "Forward engine thrust multiplier. 1.00 is stock and 1.25 adds 25% thrust. Press F7 to adjust it in game.",
+                    "Forward engine thrust multiplier. Extra thrust tapers near the airborne overspeed threshold. Press F7 to adjust it in game.",
                     new AcceptableValueRange<float>(MinimumThrust, MaximumThrust)));
 
             if (!enabled.Value)
@@ -48,8 +48,14 @@ namespace MaydayEngineBoost
                 typeof(PlaneFlight), "EngineThrust", new[] { outputType, outputType });
             MethodInfo flightStep = AccessTools.DeclaredMethod(typeof(FlightSim), "Step",
                 new[] { typeof(float), typeof(FlightSim.Controls).MakeByRefType() });
+            Type scalarRef = typeof(float).MakeByRefType();
+            MethodInfo manualControl = AccessTools.DeclaredMethod(typeof(ControlLaw), "Manual", new[]
+            {
+                typeof(FlightSim), typeof(float), typeof(float), scalarRef, typeof(float), typeof(float),
+                typeof(bool), typeof(float), typeof(float), scalarRef, scalarRef
+            });
 
-            if (engineThrust == null || flightStep == null)
+            if (engineThrust == null || flightStep == null || manualControl == null)
             {
                 Log.LogWarning("Engine boost disabled: this game build has a different thrust method.");
                 return;
@@ -64,6 +70,9 @@ namespace MaydayEngineBoost
             {
                 harmony.Patch(engineThrust, postfix: new HarmonyMethod(postfix));
                 harmony.Patch(flightStep, prefix: new HarmonyMethod(prefix));
+                harmony.Patch(manualControl,
+                    prefix: new HarmonyMethod(AccessTools.DeclaredMethod(typeof(EngineBoostPlugin), nameof(TrimForBoostedSpeed))),
+                    postfix: new HarmonyMethod(AccessTools.DeclaredMethod(typeof(EngineBoostPlugin), nameof(RestorePilotTrim))));
                 InventoryExpansion.Install(harmony, Config);
                 AddComponent<EngineBoostPanel>();
             }
@@ -101,7 +110,38 @@ namespace MaydayEngineBoost
                 return;
 
             const float AccelerationPerEngine = 0.95f; // FlightSim.Step, demo build 26546546.
-            __instance.Speed += overflow * AccelerationPerEngine * __0;
+            float speed = __instance.Speed;
+            float extraSpeed = overflow * AccelerationPerEngine * __0;
+            if (!__instance.OnGround)
+            {
+                // Stock autopilot commands a climb above 85 m/s. Manual overspeed protection begins above 88 m/s.
+                const float TaperStart = 74f;
+                const float BoostLimit = 80f;
+                extraSpeed *= 1f - Mathf.InverseLerp(TaperStart, BoostLimit, speed);
+                extraSpeed = Mathf.Min(extraSpeed, Mathf.Max(0f, BoostLimit - speed));
+            }
+
+            if (extraSpeed > 0f)
+                __instance.Speed = speed + extraSpeed;
+        }
+
+        private static void TrimForBoostedSpeed(FlightSim __0, float __1, ref float __3, float __7, out float __state)
+        {
+            __state = float.NaN;
+            float multiplier = ThrustMultiplier.Value;
+            if (multiplier <= 1f || !NetworkServer.active || __0.OnGround ||
+                __7 * multiplier <= 1f || Mathf.Abs(__1) > 0.05f || __0.Speed <= __3)
+                return;
+
+            // Neutral yoke normally climbs to shed speed above the last trim point.
+            __state = __3;
+            __3 = __0.Speed;
+        }
+
+        private static void RestorePilotTrim(ref float __3, float __state)
+        {
+            if (!float.IsNaN(__state))
+                __3 = __state;
         }
     }
 

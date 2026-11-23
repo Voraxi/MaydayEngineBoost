@@ -17,7 +17,7 @@ Built for Steam demo build 26546546 and BepInEx 6.0.0-be.793.
 - Use **Reset to stock** or press **Home** to restore 100%. The amber marker shows the stock setting on the slider.
 - To unload the mod entirely, close the game and move the DLL out of `BepInEx\plugins`. You can also set `Enabled = false` in `BepInEx\config\local.mayday.engineboost.cfg` before launching.
 
-Thrust above 100% adds forward acceleration when the game would otherwise cap engine thrust. Drag and overspeed behaviour still apply.
+Thrust above 100% adds forward acceleration when the game would otherwise cap engine thrust. In flight, the extra boost tapers from 74 m/s and ends at 80 m/s to avoid the game's automatic overspeed climb. With the yoke centered at boosted power, manual trim accounts for the added speed. Stock overspeed protections remain active.
 
 ## Inventory
 
