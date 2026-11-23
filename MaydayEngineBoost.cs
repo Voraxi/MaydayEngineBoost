@@ -17,7 +17,7 @@ using UnityEngine.UI;
 
 namespace MaydayEngineBoost
 {
-    [BepInPlugin(PluginId, "Mayday Engine Boost", "1.6.0")]
+    [BepInPlugin(PluginId, "Mayday Flight Controls", "1.7.0")]
     public sealed class EngineBoostPlugin : BasePlugin
     {
         private const string PluginId = "local.mayday.engineboost";
@@ -43,6 +43,8 @@ namespace MaydayEngineBoost
                 Log.LogInfo("Engine boost disabled. Stock thrust is active.");
                 return;
             }
+
+            InterfaceText.Configure(Config);
 
             Type outputType = typeof(float).MakeByRefType();
             MethodInfo engineThrust = AccessTools.DeclaredMethod(
@@ -249,6 +251,31 @@ namespace MaydayEngineBoost
         }
     }
 
+    internal enum InterfaceLanguage
+    {
+        Auto,
+        English,
+        Chinese
+    }
+
+    internal static class InterfaceText
+    {
+        private static InterfaceLanguage language;
+
+        internal static void Configure(ConfigFile config)
+        {
+            language = config.Bind("Interface", "Language", InterfaceLanguage.Auto,
+                "F7 panel language. Auto follows the game's language. Options: Auto, English, Chinese. Restart after editing this setting.").Value;
+        }
+
+        internal static bool UseChinese => language == InterfaceLanguage.Chinese ||
+            (language == InterfaceLanguage.Auto &&
+             string.Equals(Loc.Lang, "schinese", StringComparison.OrdinalIgnoreCase));
+
+        internal static string Localize(bool chinese, string english, string simplifiedChinese) =>
+            chinese ? simplifiedChinese : english;
+    }
+
     internal static class FuelEditor
     {
         internal static FuelSystem Active
@@ -321,6 +348,7 @@ namespace MaydayEngineBoost
         private bool open;
         private bool dragging;
         private bool settingsDirty;
+        private bool chinese;
         private RectTransform canvasRoot;
         private RectTransform panel;
         private RectTransform controls;
@@ -446,6 +474,16 @@ namespace MaydayEngineBoost
 
         private void Open()
         {
+            bool useChinese = InterfaceText.UseChinese;
+            if (canvasRoot != null && chinese != useChinese)
+            {
+                canvasRoot.gameObject.SetActive(false);
+                Destroy(canvasRoot.gameObject);
+                canvasRoot = null;
+                displayedValue = float.NaN;
+            }
+            chinese = useChinese;
+
             if (canvasRoot == null)
             {
                 try
@@ -503,13 +541,14 @@ namespace MaydayEngineBoost
             UIF.ShadowFor(panel, 22f, 16f, -8f, 0.42f);
             UIF.Stretch(UIF.Round(panel, "Panel Border", Border, 21f).rectTransform);
             UIF.Stretch(UIF.Round(panel, "Panel Surface", Surface, 20f).rectTransform, 1f, 1f, 1f, 1f);
-            TextAt(panel, "Engine controls", new Rect(24f, 14f, 320f, 35f), 24f, Text, bold: true);
-            closeButton = AddButton(panel, CloseButton, "Close", 13f);
+            TextAt(panel, L("Flight controls", "飞行控制"), new Rect(24f, 14f, 320f, 35f), 24f, Text, bold: true);
+            closeButton = AddButton(panel, CloseButton, L("Close", "关闭"), 13f);
             Shape(panel, "Header Divider", new Rect(24f, 58f, 396f, 1f), Border, 0f);
 
             controls = UIF.Rect("Host Controls", panel);
             UIF.Stretch(controls);
-            number = TextAt(controls, "", new Rect(24f, 67f, 197f, 60f), 48f, Text, bold: true);
+            TextAt(controls, L("Thrust", "发动机推力"), new Rect(24f, 61f, 197f, 21f), 14f, Muted);
+            number = TextAt(controls, "", new Rect(24f, 81f, 197f, 48f), 42f, Text, bold: true);
             status = TextAt(controls, "", new Rect(222f, 76f, 198f, 24f), 15f, Text, TextAlignmentOptions.MidlineRight, true);
             session = TextAt(controls, "", new Rect(222f, 101f, 198f, 22f), 13f, Muted, TextAlignmentOptions.MidlineRight);
 
@@ -521,19 +560,21 @@ namespace MaydayEngineBoost
             thumb = Shape(controls, "Slider Thumb", new Rect(Slider.x - 12f, center - 12f, 24f, 24f), Teal, 12f);
             thumbCenter = Shape(thumb.rectTransform, "Slider Thumb Center", new Rect(3f, 3f, 18f, 18f), Surface, 9f);
             TextAt(controls, $"{EngineBoostPlugin.MinimumThrust * 100f:0}%", new Rect(23f, 174f, 43f, 26f), 13f, Muted);
-            TextAt(controls, "100% stock", new Rect(stockX - 49f, 174f, 98f, 26f), 13f, Stock, TextAlignmentOptions.Center);
+            TextAt(controls, L("100% stock", "100% 原版"), new Rect(stockX - 49f, 174f, 98f, 26f), 13f, Stock, TextAlignmentOptions.Center);
             TextAt(controls, $"{EngineBoostPlugin.MaximumThrust * 100f:0}%", new Rect(361f, 174f, 61f, 26f), 13f, Muted, TextAlignmentOptions.MidlineRight);
 
             Shape(controls, "Footer Divider", new Rect(24f, 206f, 396f, 1f), Border, 0f);
             minusButton = AddButton(controls, MinusButton, "−", 22f);
             plusButton = AddButton(controls, PlusButton, "+", 22f);
-            resetButton = AddButton(controls, ResetButton, "Reset to stock", 14f);
-            fuelControls = new FuelControls(controls);
+            resetButton = AddButton(controls, ResetButton, L("Reset to stock", "恢复原版推力"), 14f);
+            fuelControls = new FuelControls(controls, chinese);
 
             guest = UIF.Rect("Guest Message", panel);
             UIF.Stretch(guest);
-            TextAt(guest, "Host controls thrust and fuel", new Rect(24f, 94f, 396f, 42f), 22f, Text, bold: true);
-            TextAt(guest, "You can adjust these when you host a lobby.", new Rect(24f, 144f, 396f, 37f), 15f, Muted);
+            TextAt(guest, L("Host controls thrust and fuel", "推力和燃油由房主调整"),
+                new Rect(24f, 94f, 396f, 42f), 22f, Text, bold: true);
+            TextAt(guest, L("You can adjust these when you host a lobby.", "你创建房间后即可调整。"),
+                new Rect(24f, 144f, 396f, 37f), 15f, Muted);
         }
 
         private void RefreshView(float scale, Vector2 pointer, bool canAdjust)
@@ -559,9 +600,10 @@ namespace MaydayEngineBoost
                 displayedValue = current;
                 displayedServer = server;
                 number.Set($"{current * 100f:0}%");
-                status.Set(stock ? "Stock thrust" : $"{(current - 1f) * 100f:+0;-0;0}% vs stock");
+                string change = $"{(current - 1f) * 100f:+0;-0;0}%";
+                status.Set(stock ? L("Stock thrust", "原版推力") : L($"{change} vs stock", $"比原版 {change}"));
                 status.Color = stock ? Stock : Teal;
-                session.Set(server ? "Host control" : "Applies when you host");
+                session.Set(server ? L("Host control", "当前由房主控制") : L("Applies when you host", "创建房间后生效"));
                 float width = Slider.width * SliderPosition(current);
                 Rect size = new Rect(Slider.x, Slider.center.y - 4f, width, 8f);
                 Place(progress.rectTransform, size);
@@ -577,6 +619,9 @@ namespace MaydayEngineBoost
 
         private static float SliderPosition(float value) =>
             Mathf.InverseLerp(EngineBoostPlugin.MinimumThrust, EngineBoostPlugin.MaximumThrust, value);
+
+        private string L(string english, string simplifiedChinese) =>
+            InterfaceText.Localize(chinese, english, simplifiedChinese);
 
         private static Image AddButton(RectTransform parent, Rect rect, string text, float fontSize)
         {
@@ -647,17 +692,19 @@ namespace MaydayEngineBoost
             private FuelSystem fuel;
             private FuelSlider dragged;
 
-            internal FuelControls(RectTransform parent)
+            internal FuelControls(RectTransform parent, bool chinese)
             {
+                string L(string english, string simplifiedChinese) =>
+                    InterfaceText.Localize(chinese, english, simplifiedChinese);
                 Shape(parent, "Fuel Divider", new Rect(24f, 270f, 396f, 1f), Border, 0f);
-                TextAt(parent, "Fuel", new Rect(24f, 279f, 396f, 29f), 19f, Text, bold: true);
-                message = TextAt(parent, "Fuel controls appear when you host a loaded flight.",
+                TextAt(parent, L("Fuel", "燃油"), new Rect(24f, 279f, 396f, 29f), 19f, Text, bold: true);
+                message = TextAt(parent, L("Fuel controls appear when you host a loaded flight.", "作为房主加载航班后即可调整燃油。"),
                     new Rect(24f, 319f, 396f, 31f), 14f, Muted);
                 editor = UIF.Rect("Fuel Controls", parent);
                 UIF.Stretch(editor);
-                main = new FuelSlider(editor, "Main tanks", 310f);
-                reserve = new FuelSlider(editor, "Reserve", 366f);
-                apply = AddButton(editor, ApplyRect, "Apply fuel", 14f);
+                main = new FuelSlider(editor, L("Main tanks", "主油箱"), 310f);
+                reserve = new FuelSlider(editor, L("Reserve", "备用油箱"), 366f);
+                apply = AddButton(editor, ApplyRect, L("Apply fuel", "应用油量"), 14f);
             }
 
             internal void HandlePointer(Vector2 position, bool pressed, bool held)
