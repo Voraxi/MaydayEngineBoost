@@ -12,10 +12,12 @@ Built for Steam demo build 26546546 and BepInEx 6.0.0-be.793.
 
 ## Controls
 
-- **F7** opens and closes the panel. The large readout shows your current thrust and how far it is from stock.
-- Drag the slider, click **−** or **+**, or use **←** and **→** to adjust thrust from 10% to 500% in five-point steps. The default is 125%.
+- **F7** opens and closes the panel. The large readout shows your current thrust and how far it is from stock. The panel uses the game's native UI font and rounded controls.
+- Drag the slider, click **−** or **+**, or use **←** and **→** to adjust thrust from 10% to 600% in five-point steps. The default is 125%.
 - Use **Reset to stock** or press **Home** to restore 100%. The amber marker shows the stock setting on the slider.
 - To unload the mod entirely, close the game and move the DLL out of `BepInEx\plugins`. You can also set `Enabled = false` in `BepInEx\config\local.mayday.engineboost.cfg` before launching.
+
+Thrust above 100% adds forward acceleration when the game would otherwise cap engine thrust. Drag and overspeed behaviour still apply.
 
 ## Build from source
 

@@ -11,8 +11,9 @@
     <Reference Include="Assembly-CSharp" HintPath="$(MaydayGameDir)\BepInEx\interop\Assembly-CSharp.dll" Private="false" />
     <Reference Include="Mirror" HintPath="$(MaydayGameDir)\BepInEx\interop\Mirror.dll" Private="false" />
     <Reference Include="UnityEngine.CoreModule" HintPath="$(MaydayGameDir)\BepInEx\interop\UnityEngine.CoreModule.dll" Private="false" />
-    <Reference Include="UnityEngine.IMGUIModule" HintPath="$(MaydayGameDir)\BepInEx\interop\UnityEngine.IMGUIModule.dll" Private="false" />
-    <Reference Include="UnityEngine.TextRenderingModule" HintPath="$(MaydayGameDir)\BepInEx\interop\UnityEngine.TextRenderingModule.dll" Private="false" />
+    <Reference Include="UnityEngine.UI" HintPath="$(MaydayGameDir)\BepInEx\interop\UnityEngine.UI.dll" Private="false" />
+    <Reference Include="UnityEngine.UIModule" HintPath="$(MaydayGameDir)\BepInEx\interop\UnityEngine.UIModule.dll" Private="false" />
+    <Reference Include="Unity.TextMeshPro" HintPath="$(MaydayGameDir)\BepInEx\interop\Unity.TextMeshPro.dll" Private="false" />
     <Reference Include="Unity.InputSystem" HintPath="$(MaydayGameDir)\BepInEx\interop\Unity.InputSystem.dll" Private="false" />
     <Reference Include="Il2Cppmscorlib" HintPath="$(MaydayGameDir)\BepInEx\interop\Il2Cppmscorlib.dll" Private="false" />
   </ItemGroup>

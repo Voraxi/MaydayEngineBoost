@@ -6,18 +6,21 @@ using BepInEx.Unity.IL2CPP;
 using HarmonyLib;
 using Mayday;
 using Mayday.Flight;
+using Mayday.UI;
 using Mirror;
 using UnityEngine;
+using TMPro;
 using UnityEngine.InputSystem;
+using UnityEngine.UI;
 
 namespace MaydayEngineBoost
 {
-    [BepInPlugin(PluginId, "Mayday Engine Boost", "1.3.0")]
+    [BepInPlugin(PluginId, "Mayday Engine Boost", "1.4.0")]
     public sealed class EngineBoostPlugin : BasePlugin
     {
         private const string PluginId = "local.mayday.engineboost";
         internal const float MinimumThrust = 0.10f;
-        internal const float MaximumThrust = 5.00f;
+        internal const float MaximumThrust = 6.00f;
         internal static ConfigEntry<float> ThrustMultiplier { get; private set; }
 
         public override void Load()
@@ -42,8 +45,10 @@ namespace MaydayEngineBoost
             Type outputType = typeof(float).MakeByRefType();
             MethodInfo engineThrust = AccessTools.DeclaredMethod(
                 typeof(PlaneFlight), "EngineThrust", new[] { outputType, outputType });
+            MethodInfo flightStep = AccessTools.DeclaredMethod(typeof(FlightSim), "Step",
+                new[] { typeof(float), typeof(FlightSim.Controls).MakeByRefType() });
 
-            if (engineThrust == null)
+            if (engineThrust == null || flightStep == null)
             {
                 Log.LogWarning("Engine boost disabled: this game build has a different thrust method.");
                 return;
@@ -51,15 +56,18 @@ namespace MaydayEngineBoost
 
             MethodInfo postfix = AccessTools.DeclaredMethod(
                 typeof(EngineBoostPlugin), nameof(ScaleEngineThrust));
+            MethodInfo prefix = AccessTools.DeclaredMethod(
+                typeof(EngineBoostPlugin), nameof(ApplyThrustAboveCap));
             var harmony = new Harmony(PluginId);
-            harmony.Patch(engineThrust, postfix: new HarmonyMethod(postfix));
             try
             {
+                harmony.Patch(engineThrust, postfix: new HarmonyMethod(postfix));
+                harmony.Patch(flightStep, prefix: new HarmonyMethod(prefix));
                 AddComponent<EngineBoostPanel>();
             }
             catch
             {
-                harmony.Unpatch(engineThrust, postfix);
+                harmony.UnpatchSelf();
                 throw;
             }
             Config.SaveOnConfigSet = false;
@@ -77,38 +85,65 @@ namespace MaydayEngineBoost
             if (__1 > 0f)
                 __1 *= multiplier;
         }
+
+        private static void ApplyThrustAboveCap(FlightSim __instance, float __0, ref FlightSim.Controls __1)
+        {
+            if (ThrustMultiplier.Value <= 1f || !NetworkServer.active || __1.reverse)
+                return;
+
+            // FlightSim.Step clamps each engine to 1 before converting thrust to acceleration.
+            // Add only the overflow so Step still handles normal thrust, drag and position.
+            float overflow = Mathf.Max(0f, __1.thrustL - 1f) + Mathf.Max(0f, __1.thrustR - 1f);
+            if (overflow <= 0f ||
+                (__instance.OnGround && (__1.parkingBrake || __1.brakes > 0.01f || __instance.Backward)))
+                return;
+
+            const float AccelerationPerEngine = 0.95f; // FlightSim.Step, demo build 26546546.
+            __instance.Speed += overflow * AccelerationPerEngine * __0;
+        }
     }
 
     public sealed class EngineBoostPanel : MonoBehaviour
     {
-        private const float Width = 420f;
-        private const float Height = 252f;
-        private const float Margin = 16f;
+        private const float Width = 444f;
+        private const float Height = 276f;
+        private const float Margin = 24f;
         private const float Step = 0.05f;
 
-        private static readonly Color Surface = new Color(0.047f, 0.071f, 0.102f, 0.98f);
-        private static readonly Color Raised = new Color(0.078f, 0.110f, 0.153f);
-        private static readonly Color Border = new Color(0.16f, 0.22f, 0.29f);
-        private static readonly Color Text = new Color(0.91f, 0.95f, 0.98f);
-        private static readonly Color Muted = new Color(0.64f, 0.71f, 0.79f);
-        private static readonly Color Cyan = new Color(0.37f, 0.85f, 0.94f);
-        private static readonly Color Amber = new Color(0.99f, 0.76f, 0.40f);
+        private static readonly Color Surface = new Color32(18, 24, 31, 255);
+        private static readonly Color Border = new Color32(53, 64, 75, 255);
+        private static readonly Color Control = new Color32(35, 44, 53, 255);
+        private static readonly Color Hover = new Color32(51, 65, 76, 255);
+        private static readonly Color Text = new Color32(239, 245, 249, 255);
+        private static readonly Color Muted = new Color32(160, 175, 189, 255);
+        private static readonly Color Teal = new Color32(112, 228, 209, 255);
+        private static readonly Color Stock = new Color32(244, 193, 109, 255);
 
-        private static readonly Rect CloseButton = new Rect(364f, 13f, 36f, 32f);
-        private static readonly Rect MinusButton = new Rect(20f, 124f, 36f, 36f);
-        private static readonly Rect PlusButton = new Rect(364f, 124f, 36f, 36f);
-        private static readonly Rect Slider = new Rect(70f, 124f, 280f, 36f);
-        private static readonly Rect ResetButton = new Rect(20f, 202f, 134f, 32f);
+        private static readonly Rect CloseButton = new Rect(382f, 12f, 42f, 36f);
+        private static readonly Rect MinusButton = new Rect(24f, 220f, 46f, 36f);
+        private static readonly Rect PlusButton = new Rect(78f, 220f, 46f, 36f);
+        private static readonly Rect Slider = new Rect(30f, 134f, 384f, 44f);
+        private static readonly Rect ResetButton = new Rect(267f, 220f, 153f, 36f);
 
         private bool open;
         private bool dragging;
         private bool settingsDirty;
-        private GUIStyle title;
-        private GUIStyle number;
-        private GUIStyle label;
-        private GUIStyle right;
-        private GUIStyle centered;
-        private GUIStyle button;
+        private RectTransform canvasRoot;
+        private RectTransform panel;
+        private RectTransform controls;
+        private RectTransform guest;
+        private Image closeButton;
+        private Image minusButton;
+        private Image plusButton;
+        private Image resetButton;
+        private Image progress;
+        private Image thumb;
+        private Image thumbCenter;
+        private UIText number;
+        private UIText status;
+        private UIText session;
+        private float displayedValue = float.NaN;
+        private bool displayedServer;
 
         public EngineBoostPanel(IntPtr pointer) : base(pointer) { }
 
@@ -118,28 +153,25 @@ namespace MaydayEngineBoost
         {
             get
             {
-                float preferred = Mathf.Clamp(Screen.height / 1080f, 0.9f, 1.6f);
+                float preferred = Mathf.Clamp(Screen.height / 1080f, 0.88f, 1.75f);
                 return Mathf.Min(preferred, Mathf.Min(
                     (Screen.width - 2f * Margin) / Width,
                     (Screen.height - 2f * Margin) / Height));
             }
         }
 
-        private static Vector2 PanelOrigin(float scale) =>
-            new Vector2(Screen.width - Margin - Width * scale, Margin);
-
         private static Vector2 PanelPointer(Mouse mouse, float scale)
         {
             Vector2 position = mouse.position.ReadValue();
-            return (new Vector2(position.x, Screen.height - position.y) - PanelOrigin(scale)) / scale;
+            float left = Screen.width - Margin - Width * scale;
+            return new Vector2(position.x - left, Screen.height - position.y - Margin) / scale;
         }
 
         private void Update()
         {
             if (open && !UIState.IsOpen(this))
             {
-                open = false;
-                dragging = false;
+                Hide();
                 SaveSetting();
             }
 
@@ -169,16 +201,22 @@ namespace MaydayEngineBoost
 
             Mouse mouse = Mouse.current;
             float scale = PanelScale;
-            if (mouse == null || scale <= 0f)
+            Vector2 pointer = mouse != null && scale > 0f
+                ? PanelPointer(mouse, scale) : new Vector2(-1f, -1f);
+            if (mouse != null && HandleMouse(mouse, pointer, canAdjust))
                 return;
 
-            Vector2 pointer = PanelPointer(mouse, scale);
+            RefreshView(scale, pointer, canAdjust);
+        }
+
+        private bool HandleMouse(Mouse mouse, Vector2 pointer, bool canAdjust)
+        {
             if (mouse.leftButton.wasPressedThisFrame)
             {
                 if (CloseButton.Contains(pointer))
                 {
                     Close();
-                    return;
+                    return true;
                 }
                 if (canAdjust)
                 {
@@ -194,24 +232,40 @@ namespace MaydayEngineBoost
                 }
             }
 
-            if (!dragging)
-                return;
-
-            if (canAdjust && mouse.leftButton.isPressed)
+            if (dragging && canAdjust && mouse.leftButton.isPressed)
             {
                 float ratio = Mathf.InverseLerp(Slider.xMin, Slider.xMax, pointer.x);
                 SetMultiplier(Mathf.Lerp(EngineBoostPlugin.MinimumThrust, EngineBoostPlugin.MaximumThrust, ratio));
             }
-            else
+            else if (dragging)
             {
                 dragging = false;
                 SaveSetting();
             }
+
+            return false;
         }
 
         private void Open()
         {
+            if (canvasRoot == null)
+            {
+                try
+                {
+                    BuildView();
+                }
+                catch
+                {
+                    if (canvasRoot != null)
+                        Destroy(canvasRoot.gameObject);
+                    canvasRoot = null;
+                    throw;
+                }
+            }
+
+            RefreshView(PanelScale, new Vector2(-1f, -1f), CanAdjust);
             UIState.Push(this);
+            canvasRoot.gameObject.SetActive(true);
             open = true;
         }
 
@@ -219,144 +273,140 @@ namespace MaydayEngineBoost
         {
             if (open)
             {
-                open = false;
-                dragging = false;
+                Hide();
                 UIState.Pop(this);
             }
             SaveSetting();
         }
 
+        private void Hide()
+        {
+            open = false;
+            dragging = false;
+            if (canvasRoot != null)
+                canvasRoot.gameObject.SetActive(false);
+        }
+
         private void OnDisable() => Close();
 
-        private void OnGUI()
+        private void BuildView()
         {
-            if (!open)
-                return;
+            canvasRoot = UIF.Rect("Engine Boost Canvas", transform);
+            canvasRoot.gameObject.SetActive(false);
+            Canvas canvas = canvasRoot.gameObject.AddComponent<Canvas>();
+            canvas.renderMode = RenderMode.ScreenSpaceOverlay;
+            canvas.sortingOrder = 28000;
 
-            float scale = PanelScale;
-            if (scale <= 0f)
-                return;
+            panel = UIF.Rect("Thrust Panel", canvasRoot);
+            Vector2 topRight = new Vector2(1f, 1f);
+            UIF.At(panel, topRight, topRight, new Vector2(-Margin, -Margin), new Vector2(Width, Height));
 
-            if (title == null)
-            {
-                title = MakeStyle(21, TextAnchor.MiddleLeft);
-                number = MakeStyle(42, TextAnchor.MiddleLeft);
-                label = MakeStyle(13, TextAnchor.MiddleLeft);
-                right = MakeStyle(13, TextAnchor.MiddleRight);
-                centered = MakeStyle(13, TextAnchor.MiddleCenter);
-                button = MakeStyle(14, TextAnchor.MiddleCenter);
-            }
+            UIF.ShadowFor(panel, 22f, 16f, -8f, 0.42f);
+            UIF.Stretch(UIF.Round(panel, "Panel Border", Border, 21f).rectTransform);
+            UIF.Stretch(UIF.Round(panel, "Panel Surface", Surface, 20f).rectTransform, 1f, 1f, 1f, 1f);
+            TextAt(panel, "Engine thrust", new Rect(24f, 14f, 320f, 35f), 24f, Text, bold: true);
+            closeButton = AddButton(panel, CloseButton, "Close", 13f);
+            Shape(panel, "Header Divider", new Rect(24f, 58f, 396f, 1f), Border, 0f);
 
-            Mouse mouse = Mouse.current;
-            Vector2 pointer = mouse != null ? PanelPointer(mouse, scale) : new Vector2(-1f, -1f);
-            Vector2 origin = PanelOrigin(scale);
-            int previousDepth = GUI.depth;
-            Matrix4x4 previousMatrix = GUI.matrix;
-            GUI.depth = -100;
-            GUI.matrix = previousMatrix * Matrix4x4.TRS(
-                new Vector3(origin.x, origin.y, 0f), Quaternion.identity, new Vector3(scale, scale, 1f));
-            try
-            {
-                DrawPanel(pointer);
-            }
-            finally
-            {
-                GUI.matrix = previousMatrix;
-                GUI.depth = previousDepth;
-            }
+            controls = UIF.Rect("Host Controls", panel);
+            UIF.Stretch(controls);
+            number = TextAt(controls, "", new Rect(24f, 67f, 197f, 60f), 48f, Text, bold: true);
+            status = TextAt(controls, "", new Rect(222f, 76f, 198f, 24f), 15f, Text, TextAlignmentOptions.MidlineRight, true);
+            session = TextAt(controls, "", new Rect(222f, 101f, 198f, 22f), 13f, Muted, TextAlignmentOptions.MidlineRight);
+
+            float center = Slider.center.y;
+            float stockX = Slider.x + Slider.width * SliderPosition(1f);
+            Shape(controls, "Slider Track", new Rect(Slider.x, center - 4f, Slider.width, 8f), Border, 4f);
+            progress = Shape(controls, "Slider Fill", new Rect(Slider.x, center - 4f, 1f, 8f), Teal, 4f);
+            Shape(controls, "Stock Marker", new Rect(stockX - 1.5f, center - 8f, 3f, 16f), Stock, 1.5f);
+            thumb = Shape(controls, "Slider Thumb", new Rect(Slider.x - 12f, center - 12f, 24f, 24f), Teal, 12f);
+            thumbCenter = Shape(thumb.rectTransform, "Slider Thumb Center", new Rect(3f, 3f, 18f, 18f), Surface, 9f);
+            TextAt(controls, $"{EngineBoostPlugin.MinimumThrust * 100f:0}%", new Rect(23f, 174f, 43f, 26f), 13f, Muted);
+            TextAt(controls, "100% stock", new Rect(stockX - 49f, 174f, 98f, 26f), 13f, Stock, TextAlignmentOptions.Center);
+            TextAt(controls, $"{EngineBoostPlugin.MaximumThrust * 100f:0}%", new Rect(361f, 174f, 61f, 26f), 13f, Muted, TextAlignmentOptions.MidlineRight);
+
+            Shape(controls, "Footer Divider", new Rect(24f, 206f, 396f, 1f), Border, 0f);
+            minusButton = AddButton(controls, MinusButton, "−", 22f);
+            plusButton = AddButton(controls, PlusButton, "+", 22f);
+            resetButton = AddButton(controls, ResetButton, "Reset to stock", 14f);
+
+            guest = UIF.Rect("Guest Message", panel);
+            UIF.Stretch(guest);
+            TextAt(guest, "Host controls thrust", new Rect(24f, 94f, 396f, 42f), 22f, Text, bold: true);
+            TextAt(guest, "You can adjust thrust when you host a lobby.", new Rect(24f, 144f, 396f, 37f), 15f, Muted);
         }
 
-        private void DrawPanel(Vector2 pointer)
+        private void RefreshView(float scale, Vector2 pointer, bool canAdjust)
         {
-            Fill(new Rect(4f, 5f, Width, Height), new Color(0f, 0f, 0f, 0.36f));
-            Frame(new Rect(0f, 0f, Width, Height), Surface);
-            Fill(new Rect(0f, 0f, 3f, 56f), Cyan);
-            Fill(new Rect(20f, 55f, 380f, 1f), Border);
-            Write(new Rect(20f, 11f, 300f, 36f), "Engine thrust", title, Text);
-            DrawButton(CloseButton, "×", pointer, true);
+            if (panel.localScale.x != scale)
+                panel.localScale = new Vector3(scale, scale, 1f);
 
-            if (CanAdjust)
-                DrawControls(pointer);
-            else
-                DrawGuestState();
-        }
+            if (controls.gameObject.activeSelf != canAdjust)
+                controls.gameObject.SetActive(canAdjust);
+            if (guest.gameObject.activeSelf == canAdjust)
+                guest.gameObject.SetActive(!canAdjust);
 
-        private void DrawControls(Vector2 pointer)
-        {
+            closeButton.color = CloseButton.Contains(pointer) ? Hover : Control;
+            if (!canAdjust)
+                return;
+
             float current = EngineBoostPlugin.ThrustMultiplier.Value;
             bool stock = Mathf.Approximately(current, 1f);
-            Write(new Rect(20f, 61f, 146f, 56f), $"{current * 100f:0}%", number, Cyan);
-            string status = stock ? "Stock thrust" : $"{(current - 1f) * 100f:+0;-0;0}% vs stock";
-            Write(new Rect(170f, 70f, 230f, 20f), status, right, stock ? Amber : Text);
-            Write(new Rect(170f, 91f, 230f, 20f),
-                NetworkServer.active ? "Host control" : "Applies when you host", right, Muted);
+            bool server = NetworkServer.active;
+            if (current != displayedValue || server != displayedServer)
+            {
+                displayedValue = current;
+                displayedServer = server;
+                number.Set($"{current * 100f:0}%");
+                status.Set(stock ? "Stock thrust" : $"{(current - 1f) * 100f:+0;-0;0}% vs stock");
+                status.Color = stock ? Stock : Teal;
+                session.Set(server ? "Host control" : "Applies when you host");
+                float width = Slider.width * SliderPosition(current);
+                Rect size = new Rect(Slider.x, Slider.center.y - 4f, width, 8f);
+                Place(progress.rectTransform, size);
+                progress.enabled = width > 0f;
+                Place(thumb.rectTransform, new Rect(Slider.x + width - 12f, Slider.center.y - 12f, 24f, 24f));
+            }
 
-            DrawButton(MinusButton, "−", pointer, current > EngineBoostPlugin.MinimumThrust);
-            DrawButton(PlusButton, "+", pointer, current < EngineBoostPlugin.MaximumThrust);
-            DrawSlider(current, Slider.Contains(pointer) || dragging);
-            DrawButton(ResetButton, "Reset to stock", pointer, !stock);
-            Write(new Rect(163f, 202f, 237f, 32f), "← / →  Adjust    Home  Reset    F7  Close", right, Muted);
-        }
-
-        private void DrawSlider(float current, bool highlighted)
-        {
-            float stockX = Slider.x + Slider.width * SliderPosition(1f);
-            float valueX = Slider.x + Slider.width * SliderPosition(current);
-            float midY = Slider.center.y;
-
-            Fill(new Rect(Slider.x, midY - 3f, Slider.width, 6f), Border);
-            Fill(new Rect(Mathf.Min(valueX, stockX), midY - 3f, Mathf.Abs(valueX - stockX), 6f), Cyan);
-            Fill(new Rect(stockX - 1f, midY - 12f, 2f, 24f), Amber);
-            Fill(new Rect(valueX - 6f, midY - 8f, 12f, 16f), highlighted ? Color.white : Cyan);
-
-            Write(new Rect(Slider.x - 8f, 164f, 40f, 20f), $"{EngineBoostPlugin.MinimumThrust * 100f:0}%", label, Muted);
-            Write(new Rect(stockX - 60f, 164f, 120f, 20f), "100% stock", centered, Amber);
-            Write(new Rect(Slider.xMax - 62f, 164f, 62f, 20f), $"{EngineBoostPlugin.MaximumThrust * 100f:0}%", right, Muted);
-        }
-
-        private void DrawGuestState()
-        {
-            Frame(new Rect(20f, 77f, 380f, 105f), Raised);
-            Write(new Rect(36f, 91f, 348f, 35f), "Host controls thrust", title, Text);
-            Write(new Rect(36f, 128f, 348f, 24f), "The slider is available when you host a lobby.", label, Muted);
-            Write(new Rect(220f, 202f, 180f, 32f), "F7  Close", right, Muted);
+            thumbCenter.color = dragging || Slider.Contains(pointer) ? Hover : Surface;
+            minusButton.color = MinusButton.Contains(pointer) && current > EngineBoostPlugin.MinimumThrust ? Hover : Control;
+            plusButton.color = PlusButton.Contains(pointer) && current < EngineBoostPlugin.MaximumThrust ? Hover : Control;
+            resetButton.color = ResetButton.Contains(pointer) && !stock ? Hover : Control;
         }
 
         private static float SliderPosition(float value) =>
             Mathf.InverseLerp(EngineBoostPlugin.MinimumThrust, EngineBoostPlugin.MaximumThrust, value);
 
-        private void DrawButton(Rect rect, string text, Vector2 pointer, bool enabled)
+        private static Image AddButton(RectTransform parent, Rect rect, string text, float fontSize)
         {
-            bool hover = enabled && rect.Contains(pointer);
-            Frame(rect, hover ? new Color(0.15f, 0.24f, 0.31f) : Raised);
-            Write(rect, text, button, hover ? Cyan : enabled ? Text : Muted);
+            Image fill = Shape(parent, text, rect, Control, 9f);
+            UIF.Stretch(UIF.Text(fill.rectTransform, "Label", text, fontSize, Text, TextAlignmentOptions.Center).Rect);
+            return fill;
         }
 
-        private static GUIStyle MakeStyle(int size, TextAnchor alignment) =>
-            new GUIStyle(GUI.skin.label)
-            {
-                fontSize = size,
-                alignment = alignment,
-            };
-
-        private static void Write(Rect rect, string text, GUIStyle style, Color color)
+        private static Image Shape(RectTransform parent, string name, Rect rect, Color color, float radius)
         {
-            style.normal.textColor = color;
-            GUI.Label(rect, text, style);
+            Image image = radius > 0f
+                ? UIF.Round(parent, name, color, radius)
+                : UIF.Image(parent, name, null, color);
+            Place(image.rectTransform, rect);
+            return image;
         }
 
-        private static void Frame(Rect rect, Color color)
+        private static UIText TextAt(RectTransform parent, string text, Rect rect, float size,
+            Color color, TextAlignmentOptions align = TextAlignmentOptions.MidlineLeft, bool bold = false)
         {
-            Fill(rect, Border);
-            Fill(new Rect(rect.x + 1f, rect.y + 1f, rect.width - 2f, rect.height - 2f), color);
+            UIText label = UIF.Text(parent, "Text", text, size, color, align);
+            if (bold)
+                label.Tmp.fontStyle = FontStyles.Bold;
+            Place(label.Rect, rect);
+            return label;
         }
 
-        private static void Fill(Rect rect, Color color)
+        private static void Place(RectTransform element, Rect rect)
         {
-            Color previousColor = GUI.color;
-            GUI.color = color;
-            GUI.DrawTexture(rect, Texture2D.whiteTexture);
-            GUI.color = previousColor;
+            Vector2 topLeft = new Vector2(0f, 1f);
+            UIF.At(element, topLeft, topLeft, new Vector2(rect.x, -rect.y), new Vector2(rect.width, rect.height));
         }
 
         private void ApplyAndSave(float value)
