@@ -7,6 +7,7 @@ using HarmonyLib;
 using Il2CppInterop.Runtime.InteropTypes.Arrays;
 using Mayday;
 using Mayday.Flight;
+using Mayday.Systems;
 using Mayday.UI;
 using Mirror;
 using UnityEngine;
@@ -16,7 +17,7 @@ using UnityEngine.UI;
 
 namespace MaydayEngineBoost
 {
-    [BepInPlugin(PluginId, "Mayday Engine Boost", "1.5.1")]
+    [BepInPlugin(PluginId, "Mayday Engine Boost", "1.6.0")]
     public sealed class EngineBoostPlugin : BasePlugin
     {
         private const string PluginId = "local.mayday.engineboost";
@@ -248,10 +249,57 @@ namespace MaydayEngineBoost
         }
     }
 
+    internal static class FuelEditor
+    {
+        internal static FuelSystem Active
+        {
+            get
+            {
+                if (!NetworkServer.active)
+                    return null;
+
+                FuelSystem fuel = SysRefs.Fuel;
+                return fuel != null && fuel.isServer && fuel.serverReady &&
+                    fuel.tank != null && fuel.tank.Length >= 2 &&
+                    fuel.Capacity > 0f && FuelSystem.ReserveCapacity > 0f ? fuel : null;
+            }
+        }
+
+        internal static bool Apply(FuelSystem fuel, float? main, float? reserve)
+        {
+            if (fuel == null || fuel != Active ||
+                (main.HasValue && !float.IsFinite(main.Value)) ||
+                (reserve.HasValue && !float.IsFinite(reserve.Value)))
+                return false;
+
+            // Match the game's fuel command: update the simulation tanks and the woven SyncVars.
+            if (main.HasValue)
+            {
+                float perTank = Mathf.Clamp01(main.Value) * fuel.Capacity;
+                var tanks = fuel.tank;
+                tanks[0] = perTank;
+                tanks[1] = perTank;
+                float networkLevel = Sys.Q(perTank, 0.05f);
+                fuel.NetworkfuelL = networkLevel;
+                fuel.NetworkfuelR = networkLevel;
+            }
+
+            if (reserve.HasValue)
+            {
+                float level = Mathf.Clamp01(reserve.Value) * FuelSystem.ReserveCapacity;
+                fuel.reserveTank = level;
+                fuel.NetworkreserveSync = Sys.Q(level, 0.05f);
+            }
+
+            return true;
+        }
+
+    }
+
     public sealed class EngineBoostPanel : MonoBehaviour
     {
         private const float Width = 444f;
-        private const float Height = 276f;
+        private const float Height = 480f;
         private const float Margin = 24f;
         private const float Step = 0.05f;
 
@@ -287,6 +335,7 @@ namespace MaydayEngineBoost
         private UIText number;
         private UIText status;
         private UIText session;
+        private FuelControls fuelControls;
         private float displayedValue = float.NaN;
         private bool displayedServer;
 
@@ -356,7 +405,8 @@ namespace MaydayEngineBoost
 
         private bool HandleMouse(Mouse mouse, Vector2 pointer, bool canAdjust)
         {
-            if (mouse.leftButton.wasPressedThisFrame)
+            bool pressed = mouse.leftButton.wasPressedThisFrame;
+            if (pressed)
             {
                 if (CloseButton.Contains(pointer))
                 {
@@ -376,6 +426,9 @@ namespace MaydayEngineBoost
                     dragging = Slider.Contains(pointer);
                 }
             }
+
+            if (canAdjust)
+                fuelControls.HandlePointer(pointer, pressed, mouse.leftButton.isPressed);
 
             if (dragging && canAdjust && mouse.leftButton.isPressed)
             {
@@ -428,6 +481,7 @@ namespace MaydayEngineBoost
         {
             open = false;
             dragging = false;
+            fuelControls?.Clear();
             if (canvasRoot != null)
                 canvasRoot.gameObject.SetActive(false);
         }
@@ -449,7 +503,7 @@ namespace MaydayEngineBoost
             UIF.ShadowFor(panel, 22f, 16f, -8f, 0.42f);
             UIF.Stretch(UIF.Round(panel, "Panel Border", Border, 21f).rectTransform);
             UIF.Stretch(UIF.Round(panel, "Panel Surface", Surface, 20f).rectTransform, 1f, 1f, 1f, 1f);
-            TextAt(panel, "Engine thrust", new Rect(24f, 14f, 320f, 35f), 24f, Text, bold: true);
+            TextAt(panel, "Engine controls", new Rect(24f, 14f, 320f, 35f), 24f, Text, bold: true);
             closeButton = AddButton(panel, CloseButton, "Close", 13f);
             Shape(panel, "Header Divider", new Rect(24f, 58f, 396f, 1f), Border, 0f);
 
@@ -474,11 +528,12 @@ namespace MaydayEngineBoost
             minusButton = AddButton(controls, MinusButton, "−", 22f);
             plusButton = AddButton(controls, PlusButton, "+", 22f);
             resetButton = AddButton(controls, ResetButton, "Reset to stock", 14f);
+            fuelControls = new FuelControls(controls);
 
             guest = UIF.Rect("Guest Message", panel);
             UIF.Stretch(guest);
-            TextAt(guest, "Host controls thrust", new Rect(24f, 94f, 396f, 42f), 22f, Text, bold: true);
-            TextAt(guest, "You can adjust thrust when you host a lobby.", new Rect(24f, 144f, 396f, 37f), 15f, Muted);
+            TextAt(guest, "Host controls thrust and fuel", new Rect(24f, 94f, 396f, 42f), 22f, Text, bold: true);
+            TextAt(guest, "You can adjust these when you host a lobby.", new Rect(24f, 144f, 396f, 37f), 15f, Muted);
         }
 
         private void RefreshView(float scale, Vector2 pointer, bool canAdjust)
@@ -492,6 +547,7 @@ namespace MaydayEngineBoost
                 guest.gameObject.SetActive(!canAdjust);
 
             closeButton.color = CloseButton.Contains(pointer) ? Hover : Control;
+            fuelControls.Refresh(pointer, canAdjust ? FuelEditor.Active : null);
             if (!canAdjust)
                 return;
 
@@ -578,6 +634,132 @@ namespace MaydayEngineBoost
 
             EngineBoostPlugin.ThrustMultiplier.ConfigFile.Save();
             settingsDirty = false;
+        }
+
+        private sealed class FuelControls
+        {
+            private static readonly Rect ApplyRect = new Rect(267f, 427f, 153f, 36f);
+            private readonly FuelSlider main;
+            private readonly FuelSlider reserve;
+            private readonly UIText message;
+            private readonly RectTransform editor;
+            private readonly Image apply;
+            private FuelSystem fuel;
+            private FuelSlider dragged;
+
+            internal FuelControls(RectTransform parent)
+            {
+                Shape(parent, "Fuel Divider", new Rect(24f, 270f, 396f, 1f), Border, 0f);
+                TextAt(parent, "Fuel", new Rect(24f, 279f, 396f, 29f), 19f, Text, bold: true);
+                message = TextAt(parent, "Fuel controls appear when you host a loaded flight.",
+                    new Rect(24f, 319f, 396f, 31f), 14f, Muted);
+                editor = UIF.Rect("Fuel Controls", parent);
+                UIF.Stretch(editor);
+                main = new FuelSlider(editor, "Main tanks", 310f);
+                reserve = new FuelSlider(editor, "Reserve", 366f);
+                apply = AddButton(editor, ApplyRect, "Apply fuel", 14f);
+            }
+
+            internal void HandlePointer(Vector2 position, bool pressed, bool held)
+            {
+                if (fuel == null || fuel != FuelEditor.Active)
+                    return;
+
+                if (pressed)
+                {
+                    if (ApplyRect.Contains(position) && (main.Pending.HasValue || reserve.Pending.HasValue))
+                    {
+                        if (FuelEditor.Apply(fuel, main.Pending, reserve.Pending))
+                            Clear();
+                        return;
+                    }
+
+                    dragged = main.Track.Contains(position) ? main : reserve.Track.Contains(position) ? reserve : null;
+                }
+
+                if (dragged != null && (pressed || held))
+                {
+                    Rect track = dragged.Track;
+                    dragged.Pending = Mathf.Round(100f * Mathf.InverseLerp(track.xMin, track.xMax, position.x)) / 100f;
+                }
+                else
+                {
+                    dragged = null;
+                }
+            }
+
+            internal void Refresh(Vector2 position, FuelSystem activeFuel)
+            {
+                if (activeFuel != fuel)
+                {
+                    Clear();
+                    fuel = activeFuel;
+                }
+
+                bool ready = fuel != null;
+                if (editor.gameObject.activeSelf != ready)
+                    editor.gameObject.SetActive(ready);
+                if (message.gameObject.activeSelf == ready)
+                    message.gameObject.SetActive(!ready);
+                if (!ready)
+                    return;
+
+                main.Draw(fuel.Total, 2f * fuel.Capacity, main == dragged || main.Track.Contains(position));
+                reserve.Draw(fuel.Reserve, FuelSystem.ReserveCapacity, reserve == dragged || reserve.Track.Contains(position));
+                bool changed = main.Pending.HasValue || reserve.Pending.HasValue;
+                apply.color = changed ? (ApplyRect.Contains(position) ? Hover : Control) : Surface;
+            }
+
+            internal void Clear()
+            {
+                main.Pending = null;
+                reserve.Pending = null;
+                dragged = null;
+            }
+        }
+
+        private sealed class FuelSlider
+        {
+            internal readonly Rect Track;
+            internal float? Pending;
+            private readonly UIText amount;
+            private readonly Image fill;
+            private readonly Image thumb;
+            private string displayed;
+            private float previousFraction = -1f;
+
+            internal FuelSlider(RectTransform parent, string label, float top)
+            {
+                Track = new Rect(30f, top + 23f, 384f, 26f);
+                TextAt(parent, label, new Rect(24f, top, 145f, 24f), 14f, Text);
+                amount = TextAt(parent, "", new Rect(177f, top, 243f, 24f), 14f, Muted, TextAlignmentOptions.MidlineRight);
+                float y = Track.center.y - 3f;
+                Shape(parent, label + " Track", new Rect(Track.x, y, Track.width, 6f), Border, 3f);
+                fill = Shape(parent, label + " Fill", new Rect(Track.x, y, 1f, 6f), Teal, 3f);
+                thumb = Shape(parent, label + " Thumb", new Rect(Track.x - 7f, y - 4f, 14f, 14f), Teal, 7f);
+            }
+
+            internal void Draw(float current, float capacity, bool hover)
+            {
+                float fraction = Pending ?? Mathf.Clamp01(current / capacity);
+                float shown = Pending.HasValue ? fraction * capacity : current;
+                string value = $"{shown:0.#} / {capacity:0.#} L ({fraction * 100f:0}%)";
+                if (value != displayed)
+                {
+                    displayed = value;
+                    amount.Set(value);
+                }
+                if (fraction != previousFraction)
+                {
+                    previousFraction = fraction;
+                    float width = Track.width * fraction;
+                    fill.enabled = width > 0f;
+                    Place(fill.rectTransform, new Rect(Track.x, Track.center.y - 3f, width, 6f));
+                    Place(thumb.rectTransform, new Rect(Track.x + width - 7f, Track.center.y - 7f, 14f, 14f));
+                }
+                thumb.color = hover ? Text : Teal;
+                amount.Color = Pending.HasValue ? Teal : Muted;
+            }
         }
     }
 }

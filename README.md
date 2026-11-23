@@ -19,6 +19,11 @@ Built for Steam demo build 26546546 and BepInEx 6.0.0-be.793.
 
 Thrust above 100% adds forward acceleration when the game would otherwise cap engine thrust. In flight, the extra boost tapers from 74 m/s and ends at 80 m/s to avoid the game's automatic overspeed climb. With the yoke centered at boosted power, manual trim accounts for the added speed. Stock overspeed protections remain active.
 
+## Fuel
+
+- In a loaded flight you host, open **F7**, adjust **Main tanks** or **Reserve**, then select **Apply fuel**. The sliders show liters and tank percentages.
+- A main-tank edit sets both wing tanks to the same fill percentage. Unedited tanks keep their current levels. Applied fuel burns normally.
+
 ## Inventory
 
 - Your hotbar has six slots in solo play or when you host. Press **5** or **6** to select the extra slots.
