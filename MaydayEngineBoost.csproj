@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net6.0</TargetFramework>
+    <CopyLocalLockFileAssemblies>false</CopyLocalLockFileAssemblies>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="BepInEx.Core" HintPath="$(MaydayGameDir)\BepInEx\core\BepInEx.Core.dll" Private="false" />
+    <Reference Include="BepInEx.Unity.IL2CPP" HintPath="$(MaydayGameDir)\BepInEx\core\BepInEx.Unity.IL2CPP.dll" Private="false" />
+    <Reference Include="0Harmony" HintPath="$(MaydayGameDir)\BepInEx\core\0Harmony.dll" Private="false" />
+    <Reference Include="Il2CppInterop.Runtime" HintPath="$(MaydayGameDir)\BepInEx\core\Il2CppInterop.Runtime.dll" Private="false" />
+    <Reference Include="Assembly-CSharp" HintPath="$(MaydayGameDir)\BepInEx\interop\Assembly-CSharp.dll" Private="false" />
+    <Reference Include="Mirror" HintPath="$(MaydayGameDir)\BepInEx\interop\Mirror.dll" Private="false" />
+    <Reference Include="UnityEngine.CoreModule" HintPath="$(MaydayGameDir)\BepInEx\interop\UnityEngine.CoreModule.dll" Private="false" />
+    <Reference Include="UnityEngine.IMGUIModule" HintPath="$(MaydayGameDir)\BepInEx\interop\UnityEngine.IMGUIModule.dll" Private="false" />
+    <Reference Include="UnityEngine.TextRenderingModule" HintPath="$(MaydayGameDir)\BepInEx\interop\UnityEngine.TextRenderingModule.dll" Private="false" />
+    <Reference Include="Unity.InputSystem" HintPath="$(MaydayGameDir)\BepInEx\interop\Unity.InputSystem.dll" Private="false" />
+    <Reference Include="Il2Cppmscorlib" HintPath="$(MaydayGameDir)\BepInEx\interop\Il2Cppmscorlib.dll" Private="false" />
+  </ItemGroup>
+  <Target Name="CheckMaydayGameDir" BeforeTargets="ResolveReferences">
+    <Error Condition="!Exists('$(MaydayGameDir)\BepInEx\interop\Assembly-CSharp.dll')"
+           Text="Set MaydayGameDir to the demo folder and run the demo with BepInEx so it generates the interop assemblies." />
+  </Target>
+</Project>
