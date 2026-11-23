@@ -12,12 +12,12 @@ using UnityEngine.InputSystem;
 
 namespace MaydayEngineBoost
 {
-    [BepInPlugin(PluginId, "Mayday Engine Boost", "1.2.0")]
+    [BepInPlugin(PluginId, "Mayday Engine Boost", "1.3.0")]
     public sealed class EngineBoostPlugin : BasePlugin
     {
         private const string PluginId = "local.mayday.engineboost";
         internal const float MinimumThrust = 0.10f;
-        internal const float MaximumThrust = 2.00f;
+        internal const float MaximumThrust = 5.00f;
         internal static ConfigEntry<float> ThrustMultiplier { get; private set; }
 
         public override void Load()
@@ -309,9 +309,9 @@ namespace MaydayEngineBoost
             Fill(new Rect(stockX - 1f, midY - 12f, 2f, 24f), Amber);
             Fill(new Rect(valueX - 6f, midY - 8f, 12f, 16f), highlighted ? Color.white : Cyan);
 
-            Write(new Rect(Slider.x, 164f, 62f, 20f), "10%", label, Muted);
+            Write(new Rect(Slider.x - 8f, 164f, 40f, 20f), $"{EngineBoostPlugin.MinimumThrust * 100f:0}%", label, Muted);
             Write(new Rect(stockX - 60f, 164f, 120f, 20f), "100% stock", centered, Amber);
-            Write(new Rect(Slider.xMax - 62f, 164f, 62f, 20f), "200%", right, Muted);
+            Write(new Rect(Slider.xMax - 62f, 164f, 62f, 20f), $"{EngineBoostPlugin.MaximumThrust * 100f:0}%", right, Muted);
         }
 
         private void DrawGuestState()
