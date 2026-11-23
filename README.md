@@ -19,6 +19,12 @@ Built for Steam demo build 26546546 and BepInEx 6.0.0-be.793.
 
 Thrust above 100% adds forward acceleration when the game would otherwise cap engine thrust. Drag and overspeed behaviour still apply.
 
+## Inventory
+
+- Your hotbar has six slots in solo play or when you host. Press **5** or **6** to select the extra slots.
+- The stock scroll wheel cycles through slots 1–4.
+- To return to four slots, empty slots 5 and 6, quit the game, and set `SlotCount = 4` under `[Inventory]` in `BepInEx\config\local.mayday.engineboost.cfg`.
+
 ## Build from source
 
 Use a .NET SDK that can target .NET 6. Run the demo with BepInEx at least once so it generates the interop assemblies, then run:

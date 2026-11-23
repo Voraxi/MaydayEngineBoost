@@ -4,6 +4,7 @@ using BepInEx;
 using BepInEx.Configuration;
 using BepInEx.Unity.IL2CPP;
 using HarmonyLib;
+using Il2CppInterop.Runtime.InteropTypes.Arrays;
 using Mayday;
 using Mayday.Flight;
 using Mayday.UI;
@@ -15,7 +16,7 @@ using UnityEngine.UI;
 
 namespace MaydayEngineBoost
 {
-    [BepInPlugin(PluginId, "Mayday Engine Boost", "1.4.0")]
+    [BepInPlugin(PluginId, "Mayday Engine Boost", "1.5.0")]
     public sealed class EngineBoostPlugin : BasePlugin
     {
         private const string PluginId = "local.mayday.engineboost";
@@ -63,6 +64,7 @@ namespace MaydayEngineBoost
             {
                 harmony.Patch(engineThrust, postfix: new HarmonyMethod(postfix));
                 harmony.Patch(flightStep, prefix: new HarmonyMethod(prefix));
+                InventoryExpansion.Install(harmony, Config);
                 AddComponent<EngineBoostPanel>();
             }
             catch
@@ -100,6 +102,109 @@ namespace MaydayEngineBoost
 
             const float AccelerationPerEngine = 0.95f; // FlightSim.Step, demo build 26546546.
             __instance.Speed += overflow * AccelerationPerEngine * __0;
+        }
+    }
+
+    internal static class InventoryExpansion
+    {
+        private const int StockSlots = 4;
+        private const int ExpandedSlots = 6;
+        private const float StockBarWidth = 420f;
+        private const float SlotPitch = 108f;
+        private static ConfigEntry<int> slotCount;
+
+        internal static void Install(Harmony harmony, ConfigFile config)
+        {
+            slotCount = config.Bind("Inventory", "SlotCount", ExpandedSlots,
+                new ConfigDescription("Hotbar slots for the local host. Restart the game after changing this setting.",
+                    new AcceptableValueRange<int>(StockSlots, ExpandedSlots)));
+            if (slotCount.Value == StockSlots)
+                return;
+
+            Patch(harmony, typeof(PlayerNet), nameof(PlayerNet.OnStartLocalPlayer), nameof(OnLocalPlayerReady));
+            Patch(harmony, typeof(PlayerInteractor), "HandleHotbar", nameof(HandleExtraKeys));
+            Patch(harmony, typeof(HotbarWidget), nameof(HotbarWidget.Build), nameof(PrepareHotbar), prefix: true);
+            Patch(harmony, typeof(HotbarWidget), nameof(HotbarWidget.Tick), nameof(SizeHotbar));
+        }
+
+        private static void Patch(Harmony harmony, Type type, string method, string handler, bool prefix = false)
+        {
+            MethodInfo target = AccessTools.DeclaredMethod(type, method);
+            if (target == null)
+                throw new MissingMethodException(type.FullName, method);
+
+            var patch = new HarmonyMethod(AccessTools.DeclaredMethod(typeof(InventoryExpansion), handler));
+            harmony.Patch(target, prefix ? patch : null, prefix ? null : patch);
+        }
+
+        private static void OnLocalPlayerReady(PlayerNet __instance)
+        {
+            if (NetworkServer.activeHost && __instance.isServer)
+                EnsureCapacity(__instance.Inventory);
+        }
+
+        internal static void EnsureCapacity(PlayerInventory inventory)
+        {
+            if (inventory == null || inventory.slots == null || inventory.slots.Count < StockSlots)
+                return;
+
+            while (inventory.slots.Count < slotCount.Value)
+                inventory.slots.Add(0u);
+        }
+
+        private static void HandleExtraKeys(PlayerInteractor __instance)
+        {
+            PlayerNet player = __instance.player;
+            if (!NetworkServer.activeHost || player == null || player != PlayerNet.Local || !player.isServer ||
+                player.IsDead || player.IsSeated || UIState.BlocksGameplay)
+                return;
+
+            PlayerInventory inventory = player.Inventory;
+            EnsureCapacity(inventory);
+            Keyboard keyboard = Keyboard.current;
+            if (keyboard == null)
+                return;
+
+            if (keyboard.digit5Key.wasPressedThisFrame)
+                SelectExtraSlot(inventory, 4);
+            else if (keyboard.digit6Key.wasPressedThisFrame)
+                SelectExtraSlot(inventory, 5);
+        }
+
+        internal static void SelectExtraSlot(PlayerInventory inventory, int index)
+        {
+            if (inventory != null && inventory.slots != null &&
+                index >= StockSlots && index < Math.Min(slotCount.Value, inventory.slots.Count) && !inventory.HandsFull)
+                inventory.Networkactive = index;
+        }
+
+        private static void PrepareHotbar(HotbarWidget __instance)
+        {
+            if (__instance.slots != null && __instance.slots.Length < slotCount.Value)
+                __instance.slots = new Il2CppReferenceArray<HotbarWidget.Slot>(slotCount.Value);
+        }
+
+        private static void SizeHotbar(HotbarWidget __instance)
+        {
+            if (__instance.bar == null || __instance.slots == null || __instance.slots.Length <= StockSlots)
+                return;
+
+            PlayerNet player = PlayerNet.Local;
+            PlayerInventory inventory = player != null ? player.Inventory : null;
+            int shown = inventory != null && inventory.slots != null
+                ? Mathf.Clamp(inventory.slots.Count, StockSlots, __instance.slots.Length)
+                : StockSlots;
+            for (int index = StockSlots; index < __instance.slots.Length; index++)
+            {
+                HotbarWidget.Slot slot = __instance.slots[index];
+                if (slot != null && slot.rt != null && slot.rt.gameObject.activeSelf != (index < shown))
+                    slot.rt.gameObject.SetActive(index < shown);
+            }
+
+            Vector2 size = __instance.bar.sizeDelta;
+            float width = StockBarWidth + SlotPitch * (shown - StockSlots);
+            if (size.x != width)
+                __instance.bar.sizeDelta = new Vector2(width, size.y);
         }
     }
 
