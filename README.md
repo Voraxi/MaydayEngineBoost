@@ -2,7 +2,7 @@
 
 [简体中文](README.zh-CN.md) · [Download the latest version](https://github.com/Voraxi/MaydayEngineBoost/releases/latest)
 
-A mod for the **Mayday Airways Demo on Steam for Windows**. Adjust thrust and fuel from an in-game panel, and carry two extra items when you host.
+A mod for the **Mayday Airways Demo on Steam for Windows**. Adjust thrust and fuel, lock your fuel and watch live flight data from an animated in-game panel, and carry two extra items when you host.
 
 ## What it adds
 
@@ -10,6 +10,8 @@ A mod for the **Mayday Airways Demo on Steam for Windows**. Adjust thrust and fu
 | --- | --- |
 | **Engine thrust** | Press **F7** and move the thrust slider from **10% to 600%**. Select **Reset to stock** or press **Home** to return to 100%. |
 | **Fuel editor** | In a loaded flight you host, press **F7**, set the **Main tanks** or **Reserve** level, then select **Apply fuel**. You can add or remove fuel. Editing the main tanks sets both wing tanks to the same percentage. |
+| **Fuel lock** | Turn on **Fuel lock** in the Fuel section and your fuel won't drop in flights you host. Refuelling above the locked level raises the lock. The setting is remembered between sessions. |
+| **Flight readout** | The bottom of the panel shows live speed (m/s and knots), altitude above ground, fuel burn per minute and estimated time left on your current fuel. |
 | **Six-slot inventory** | In solo play or when you host, press **5** or **6** to select the extra slots. The scroll wheel cycles through slots 1–4. |
 | **English and Simplified Chinese** | Both languages are included in one download. The panel follows the game language by default and uses English for other languages. |
 
