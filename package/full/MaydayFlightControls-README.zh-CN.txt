@@ -1,4 +1,4 @@
-Mayday 飞行控制 1.8.0 - 完整安装包
+Mayday 飞行控制 1.9.0 - 完整安装包
 适用于 Steam 上的 Mayday Airways Demo（Windows 版）。
 English instructions: MaydayFlightControls-README.txt
 
@@ -26,6 +26,8 @@ English instructions: MaydayFlightControls-README.txt
 - 推力：拖动滑块、点击 - 和 +，或按左右方向键。点击“恢复原版”或按 Home 恢复 100%。
 - 燃油（当房主的航班中）：拖动主油箱或备用油箱的油量条，再点击“应用油量”。
   打开“燃油锁定”后油量不会下降。
+- 乘客（单人或当房主时）：选择目的地前，用 - 或 + 调整人数，
+  “满员”按已安装座位数安排，“默认”恢复游戏分配的人数。
 - 飞行数据：显示速度、离地高度、油耗和剩余续航。
 - 单人游玩或当房主时，按 5 或 6 使用额外的两个物品格。
 

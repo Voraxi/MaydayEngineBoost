@@ -2,8 +2,11 @@
   <PropertyGroup>
     <TargetFramework>net6.0</TargetFramework>
     <CopyLocalLockFileAssemblies>false</CopyLocalLockFileAssemblies>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="MaydayEngineBoost.cs" />
     <Reference Include="BepInEx.Core" HintPath="$(MaydayGameDir)\BepInEx\core\BepInEx.Core.dll" Private="false" />
     <Reference Include="BepInEx.Unity.IL2CPP" HintPath="$(MaydayGameDir)\BepInEx\core\BepInEx.Unity.IL2CPP.dll" Private="false" />
     <Reference Include="0Harmony" HintPath="$(MaydayGameDir)\BepInEx\core\0Harmony.dll" Private="false" />

@@ -1,4 +1,4 @@
-MAYDAY FLIGHT CONTROLS 1.8.0 - FULL PACKAGE
+MAYDAY FLIGHT CONTROLS 1.9.0 - FULL PACKAGE
 For the Mayday Airways Demo on Steam for Windows.
 简体中文说明请见 MaydayFlightControls-README.zh-CN.txt。
 
@@ -29,6 +29,8 @@ CONTROLS
   Reset to stock or Home returns it to 100%.
 - Fuel (in a flight you host): drag the Main tanks or Reserve gauge,
   then select Apply fuel. Turn on Fuel lock to stop fuel from dropping.
+- Passengers (solo or as host): before choosing a destination, use - or +,
+  Max (all installed seats) or Default (the game's count).
 - Flight: shows speed, altitude, fuel burn and time left.
 - Press 5 or 6 for two extra inventory slots in solo play or when you host.
 

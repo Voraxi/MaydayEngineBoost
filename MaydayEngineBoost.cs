@@ -2,11 +2,15 @@ using System;
 using System.Reflection;
 using BepInEx;
 using BepInEx.Configuration;
+using BepInEx.Logging;
 using BepInEx.Unity.IL2CPP;
 using HarmonyLib;
+using Il2CppInterop.Runtime;
 using Il2CppInterop.Runtime.InteropTypes.Arrays;
 using Mayday;
+using Mayday.Airport;
 using Mayday.Flight;
+using Mayday.Passengers;
 using Mayday.Systems;
 using Mayday.UI;
 using Mirror;
@@ -17,7 +21,7 @@ using UnityEngine.UI;
 
 namespace MaydayEngineBoost
 {
-    [BepInPlugin(PluginId, "Mayday Flight Controls", "1.8.0")]
+    [BepInPlugin(PluginId, "Mayday Flight Controls", "1.9.0")]
     public sealed class EngineBoostPlugin : BasePlugin
     {
         private const string PluginId = "local.mayday.engineboost";
@@ -79,6 +83,7 @@ namespace MaydayEngineBoost
                     prefix: new HarmonyMethod(AccessTools.DeclaredMethod(typeof(EngineBoostPlugin), nameof(TrimForBoostedSpeed))),
                     postfix: new HarmonyMethod(AccessTools.DeclaredMethod(typeof(EngineBoostPlugin), nameof(RestorePilotTrim))));
                 InventoryExpansion.Install(harmony, Config);
+                PassengerEditor.Install(harmony, Config, Log);
                 AddComponent<EngineBoostPanel>();
             }
             catch
@@ -448,6 +453,174 @@ namespace MaydayEngineBoost
         }
     }
 
+    internal static class PassengerEditor
+    {
+        // The demo supports eight cabin rows of four seats each.
+        internal const int MaximumTarget = 32;
+        private static ConfigEntry<int> target;
+
+        internal static bool Available { get; private set; }
+
+        internal static int Target
+        {
+            get => target?.Value ?? 0;
+            set
+            {
+                if (!Available)
+                    return;
+
+                int count = Mathf.Clamp(value, 0, MaximumTarget);
+                if (target.Value == count)
+                    return;
+
+                target.Value = count;
+                target.ConfigFile.Save();
+                RefreshOpenOffers();
+            }
+        }
+
+        internal static int SeatCapacity
+        {
+            get
+            {
+                if (!NetworkServer.active)
+                    return 0;
+
+                PassengerDirector director = PassengerDirector.Instance;
+                return director != null ? director.SeatCapacity : 0;
+            }
+        }
+
+        internal static void Install(Harmony harmony, ConfigFile config, ManualLogSource log)
+        {
+            target = config.Bind("Passengers", "TargetCount", 0,
+                new ConfigDescription(
+                    "Passenger count on upcoming routes you host, limited by installed seats. 0 uses the game default. Change it in the F7 panel.",
+                    new AcceptableValueRange<int>(0, MaximumTarget)));
+
+            try
+            {
+                MethodInfo passengers = AccessTools.DeclaredMethod(typeof(AirportEconomy), nameof(AirportEconomy.Passengers),
+                    new[] { typeof(int), typeof(int), typeof(ContractType) });
+                if (passengers == null)
+                {
+                    log.LogWarning("Passenger controls are unavailable: this game build has a different passenger-count method.");
+                    return;
+                }
+
+                harmony.Patch(passengers, postfix: new HarmonyMethod(
+                    AccessTools.DeclaredMethod(typeof(PassengerEditor), nameof(ApplyTarget))));
+                Available = true;
+            }
+            catch (Exception error)
+            {
+                log.LogWarning($"Passenger controls are unavailable: {error.Message}");
+            }
+        }
+
+        private static int lastCapacity;
+
+        /// <summary>
+        /// Re-applies the target to open offers when seats are installed or removed,
+        /// so Max and capped counts follow the new capacity right away.
+        /// </summary>
+        internal static void Tick()
+        {
+            if (!Available)
+                return;
+
+            int capacity = SeatCapacity;
+            if (capacity == lastCapacity)
+                return;
+
+            lastCapacity = capacity;
+            if (capacity > 0 && Target > 0)
+                RefreshOpenOffers();
+        }
+
+        /// <summary>
+        /// The lowest and highest passenger counts on the open destination offers, or false when
+        /// no offers are open. With the target at Default these are the game's own counts.
+        /// </summary>
+        internal static bool TryGetOfferRange(out int lowest, out int highest)
+        {
+            lowest = int.MaxValue;
+            highest = 0;
+            if (!NetworkServer.active)
+                return false;
+
+            GameDirector director = GameDirector.Instance;
+            if (director == null || !director.CanChooseDestination || director.NetworkchosenOption >= 0)
+                return false;
+
+            var options = director.options;
+            if (options == null)
+                return false;
+
+            for (int index = 0; index < options.Count; index++)
+            {
+                int pax = options[index].pax;
+                if (pax <= 0)
+                    continue;
+                lowest = Math.Min(lowest, pax);
+                highest = Math.Max(highest, pax);
+            }
+
+            return highest > 0;
+        }
+
+        private static void ApplyTarget(int __1, ref int __result)
+        {
+            int count = Target;
+            if (count > 0 && __1 > 0 && NetworkServer.active)
+                __result = Math.Min(count, __1);
+        }
+
+        private static unsafe void RefreshOpenOffers()
+        {
+            if (!NetworkServer.active)
+                return;
+
+            GameDirector director = GameDirector.Instance;
+            if (director == null || !director.isServer || !director.CanChooseDestination || director.NetworkchosenOption >= 0)
+                return;
+
+            var options = director.options;
+            if (options == null || options.Count == 0)
+                return;
+
+            IntPtr listClass = IL2CPP.il2cpp_object_get_class(options.Pointer);
+            IntPtr setItem = IL2CPP.il2cpp_class_get_method_from_name(listClass, "set_Item", 2);
+            if (setItem == IntPtr.Zero)
+            {
+                director.GenerateOptions();
+                return;
+            }
+
+            // The game copies the selected offer's count into both the manifest and boarding request.
+            // Update existing offers through Mirror so the destination list keeps its original routes.
+            int seats = GameDirector.SeatsNow();
+            int leg = director.optionsLeg;
+            void** arguments = stackalloc void*[2];
+            for (int index = 0; index < options.Count; index++)
+            {
+                DestOption offer = options[index];
+                int count = AirportEconomy.Passengers(leg, seats, (ContractType)offer.contract);
+                if (offer.pax == count)
+                    continue;
+
+                offer.pax = count;
+                // DestOption is a native struct. The generated generic setter passes its boxed pointer.
+                arguments[0] = &index;
+                arguments[1] = (void*)IL2CPP.il2cpp_object_unbox(offer.Pointer);
+                IntPtr exception = IntPtr.Zero;
+                IL2CPP.il2cpp_runtime_invoke(setItem, options.Pointer, arguments, ref exception);
+                GC.KeepAlive(offer);
+                Il2CppException.RaiseExceptionIfNecessary(exception);
+            }
+        }
+    }
+
     /// <summary>
     /// Developer test hook, off by default. With [Debug] Bridge = true the mod writes its live state to
     /// BepInEx/flightcontrols-debug/state.txt and runs commands written to cmd.txt (one per line):
@@ -571,7 +744,7 @@ namespace MaydayEngineBoost
     public sealed class EngineBoostPanel : MonoBehaviour
     {
         private const float Width = 460f;
-        private const float Height = 640f;
+        private const float Height = 736f;
         private const float Margin = 24f;
         private const float Step = 0.05f;
         private const float OpenSeconds = 0.36f;
@@ -606,7 +779,7 @@ namespace MaydayEngineBoost
         private RectTransform panel;
         private RectTransform body;
         private CanvasGroup bodyGroup;
-        private readonly Layer[] layers = new Layer[4];
+        private readonly Layer[] layers = new Layer[5];
         private Image accent;
         private RectTransform controls;
         private RectTransform guest;
@@ -626,6 +799,7 @@ namespace MaydayEngineBoost
         private UIText role;
         private Image roleChip;
         private FuelControls fuelControls;
+        private PassengerControls passengerControls;
         private FlightReadout readout;
         private float shownThrust = float.NaN;
         private float thumbScale = 1f;
@@ -672,6 +846,7 @@ namespace MaydayEngineBoost
         {
             float dt = Time.unscaledDeltaTime;
             FuelEditor.Tick(Time.deltaTime);
+            PassengerEditor.Tick();
 
             if (open && !UIState.IsOpen(this))
             {
@@ -751,6 +926,8 @@ namespace MaydayEngineBoost
                 text.AppendLine("sim=none");
             if (fuelControls != null)
                 text.AppendLine("ui.fuel " + fuelControls.DebugText());
+            if (passengerControls != null)
+                text.AppendLine("ui.passengers " + passengerControls.DebugText());
             if (readout != null)
                 text.AppendLine("ui.readout " + readout.DebugText());
             if (number != null)
@@ -833,7 +1010,11 @@ namespace MaydayEngineBoost
             }
 
             if (canAdjust)
+            {
                 fuelControls.HandlePointer(pointer, pressed, held);
+                if (pressed && PassengerEditor.Available)
+                    passengerControls.HandlePress(pointer);
+            }
 
             if (dragging && canAdjust && held)
             {
@@ -989,14 +1170,17 @@ namespace MaydayEngineBoost
             TextAt(guest, "!", new Rect(206f, 200f, 48f, 48f), 26f, Amber, TextAlignmentOptions.Center, true);
             TextAt(guest, L("The host is flying this one", "由房主控制这趟航班"),
                 new Rect(36f, 262f, 388f, 30f), 20f, Text, TextAlignmentOptions.Center, true);
-            TextAt(guest, L("Thrust and fuel controls unlock when you host a lobby.", "你创建房间后即可调整推力和燃油。"),
+            TextAt(guest, L("Host a lobby to change flight controls.", "创建房间后即可调整飞行设置。"),
                 new Rect(36f, 296f, 388f, 20f), 13f, Muted, TextAlignmentOptions.Center);
 
             // Flight readout
             layers[3] = new Layer(body, "Flight");
             readout = new FlightReadout(layers[3].Rect, chinese);
-            TextAt(layers[3].Rect, L("F7  close     Left / Right  adjust     Home  reset", "F7  关闭     左 / 右  调整     Home  恢复"),
-                new Rect(20f, 612f, 420f, 16f), 11f, Faint, TextAlignmentOptions.Center);
+
+            layers[4] = new Layer(body, "Passengers");
+            passengerControls = new PassengerControls(layers[4].Rect, chinese);
+            TextAt(layers[4].Rect, L("F7  close     Left / Right  adjust thrust     Home  reset thrust", "F7  关闭     左 / 右  调整推力     Home  恢复推力"),
+                new Rect(20f, 708f, 420f, 16f), 11f, Faint, TextAlignmentOptions.Center);
         }
 
         private void RefreshView(float scale, Vector2 pointer, bool canAdjust, float dt)
@@ -1017,6 +1201,7 @@ namespace MaydayEngineBoost
 
             close.Update(close.Rect.Contains(pointer), dt);
             readout.Refresh(dt);
+            passengerControls.Refresh(pointer, canAdjust, dt);
             if (guestView)
                 return;
 
@@ -1183,6 +1368,144 @@ namespace MaydayEngineBoost
                 fillImage.color = flash > 0f ? Color.Lerp(current, WithAlpha(flashColor, 0.55f), flash) : current;
                 label.Color = dimmed ? Faint : Text;
             }
+        }
+
+        private sealed class PassengerControls
+        {
+            private readonly bool chinese;
+            private readonly UIText value;
+            private readonly UIText note;
+            private readonly Button minus;
+            private readonly Button plus;
+            private readonly Button max;
+            private readonly Button reset;
+
+            internal PassengerControls(RectTransform parent, bool chinese)
+            {
+                this.chinese = chinese;
+                CardAt(parent, new Rect(20f, 614f, 420f, 84f));
+                Spaced(TextAt(parent, L("PASSENGERS", "乘客"), new Rect(36f, 624f, 140f, 16f), 11f, Muted, bold: true), 2f);
+                value = TextAt(parent, "", new Rect(36f, 641f, 140f, 26f), 20f, Cyan, bold: true);
+                note = TextAt(parent, "", new Rect(36f, 674f, 388f, 16f), 11f, Muted);
+                minus = new Button(parent, new Rect(185f, 640f, 40f, 28f), "−", 19f, 8f);
+                plus = new Button(parent, new Rect(231f, 640f, 40f, 28f), "+", 19f, 8f);
+                max = new Button(parent, new Rect(277f, 640f, 63f, 28f), L("Max", "满员"), 12f, 8f);
+                reset = new Button(parent, new Rect(346f, 640f, 78f, 28f), L("Default", "默认"), 12f, 8f);
+            }
+
+            private string L(string english, string simplifiedChinese) =>
+                InterfaceText.Localize(chinese, english, simplifiedChinese);
+
+            internal void HandlePress(Vector2 pointer)
+            {
+                int target = PassengerEditor.Target;
+                int limit = GetTargetLimit(PassengerEditor.SeatCapacity);
+                GetStepBounds(target, limit, out int down, out int up);
+                if (minus.Rect.Contains(pointer) && down >= 1)
+                {
+                    PassengerEditor.Target = down;
+                    minus.Flash(Cyan);
+                }
+                else if (plus.Rect.Contains(pointer) && up <= limit)
+                {
+                    PassengerEditor.Target = up;
+                    plus.Flash(Cyan);
+                }
+                else if (max.Rect.Contains(pointer) && target < PassengerEditor.MaximumTarget)
+                {
+                    PassengerEditor.Target = PassengerEditor.MaximumTarget;
+                    max.Flash(Cyan);
+                }
+                else if (reset.Rect.Contains(pointer) && target != 0)
+                {
+                    PassengerEditor.Target = 0;
+                    reset.Flash(Amber);
+                }
+            }
+
+            internal void Refresh(Vector2 pointer, bool canAdjust, float dt)
+            {
+                int target = PassengerEditor.Target;
+                bool available = PassengerEditor.Available;
+                bool editable = canAdjust && available;
+                bool maximum = target == PassengerEditor.MaximumTarget;
+                int capacity = editable ? PassengerEditor.SeatCapacity : 0;
+                int limit = GetTargetLimit(capacity);
+                int count = Mathf.Min(target, limit);
+                GetStepBounds(target, limit, out int down, out int up);
+                bool hasRange = editable && target == 0
+                    && PassengerEditor.TryGetOfferRange(out lowest, out highest);
+
+                SetButtonState(minus, editable && down >= 1, pointer, dt);
+                SetButtonState(plus, editable && up <= limit, pointer, dt);
+                SetButtonState(max, editable && !maximum, pointer, dt);
+                SetButtonState(reset, editable && target != 0, pointer, dt);
+
+                string selected = count.ToString();
+                if (target == 0)
+                    selected = L("Default", "默认");
+                else if (maximum && capacity == 0)
+                    selected = L("Max", "满员");
+                value.Set(editable ? selected : "—");
+                value.Color = editable && target != 0 ? Cyan : Muted;
+                if (!canAdjust)
+                    note.Set(L("Only the host can set the passenger count.", "只有房主可以设置乘客人数。"));
+                else if (!available)
+                    note.Set(L("Passenger controls are unavailable in this game build.", "当前游戏版本无法调整乘客人数。"));
+                else if (capacity > 0 && target >= capacity && maximum)
+                    note.Set(L("Uses available seats for the next trip you select.", "下一趟选定的航班将按可用座位数安排乘客。"));
+                else if (capacity > 0 && target > capacity)
+                    note.Set(L($"{target} requested · {capacity} seats for next boarding.", $"已选 {target} 人 · 下次登机有 {capacity} 个座位。"));
+                else if (hasRange)
+                {
+                    string range = lowest == highest ? lowest.ToString() : $"{lowest}–{highest}";
+                    note.Set(L($"Game default: {range} passengers. Use − or + to change it.",
+                        $"游戏默认：{range} 名乘客。用 − 或 + 调整人数。"));
+                }
+                else
+                    note.Set(L("Applies to the next boarding, up to available seats.", "下次登机时生效，人数不超过可用座位数。"));
+            }
+
+            private int lowest;
+            private int highest;
+
+            /// <summary>
+            /// The counts − and + step to. From Default they start at the game's own counts on the
+            /// open offers, so one press removes or adds one passenger instead of jumping to 1.
+            /// </summary>
+            private static void GetStepBounds(int target, int limit, out int down, out int up)
+            {
+                if (target == 0)
+                {
+                    if (PassengerEditor.TryGetOfferRange(out int low, out int high))
+                    {
+                        down = low - 1;
+                        up = Mathf.Max(high + 1, 1);
+                    }
+                    else
+                    {
+                        down = 0;
+                        up = 1;
+                    }
+                    return;
+                }
+
+                int count = Mathf.Min(target, limit);
+                down = count - 1;
+                up = count + 1;
+            }
+
+            private static int GetTargetLimit(int capacity) => capacity > 0
+                ? Mathf.Min(capacity, PassengerEditor.MaximumTarget)
+                : PassengerEditor.MaximumTarget;
+
+            private static void SetButtonState(Button button, bool enabled, Vector2 pointer, float dt)
+            {
+                button.SetDimmed(!enabled);
+                button.Update(enabled && button.Rect.Contains(pointer), dt);
+            }
+
+            internal string DebugText() => $"value='{value.Text}' note='{note.Text}'";
         }
 
         private sealed class FuelControls

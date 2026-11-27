@@ -1,4 +1,4 @@
-MAYDAY FLIGHT CONTROLS 1.8.0
+MAYDAY FLIGHT CONTROLS 1.9.0
 
 For the Mayday Airways Demo on Steam for Windows.
 For Simplified Chinese instructions, open README.zh-CN.txt.
@@ -25,6 +25,9 @@ CONTROLS
   Apply fuel. Editing Main tanks sets both wing tanks to the same percentage.
 - Turn on Fuel lock and your fuel won't drop in flights you host. Refuelling
   above the locked level raises the lock. The setting is remembered.
+- Before choosing a destination in solo play or as host, set the passenger
+  count with - and +. Max fills all installed seats and Default restores the
+  game's count. The setting is remembered.
 - The Flight section shows speed, altitude above ground, fuel burn per minute
   and estimated time left on your current fuel.
 - Press 5 or 6 for the extra inventory slots in solo play or when you host.

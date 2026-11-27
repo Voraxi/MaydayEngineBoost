@@ -11,7 +11,8 @@ A mod for the **Mayday Airways Demo on Steam for Windows**. Adjust thrust and fu
 | **Engine thrust** | Press **F7** and move the thrust slider from **10% to 600%**. Select **Reset to stock** or press **Home** to return to 100%. |
 | **Fuel editor** | In a loaded flight you host, press **F7**, set the **Main tanks** or **Reserve** level, then select **Apply fuel**. You can add or remove fuel. Editing the main tanks sets both wing tanks to the same percentage. |
 | **Fuel lock** | Turn on **Fuel lock** in the Fuel section and your fuel won't drop in flights you host. Refuelling above the locked level raises the lock. The setting is remembered between sessions. |
-| **Flight readout** | The bottom of the panel shows live speed (m/s and knots), altitude above ground, fuel burn per minute and estimated time left on your current fuel. |
+| **Passenger count** | Before choosing a destination, press **F7** and use **−** or **+** in **Passengers** to set the count for upcoming routes. **Max** uses the aircraft's seat capacity and **Default** restores the game's count. The setting is saved and works in solo play or as host. |
+| **Flight readout** | The panel shows live speed (m/s and knots), altitude above ground, fuel burn per minute and estimated time left on your current fuel. |
 | **Six-slot inventory** | In solo play or when you host, press **5** or **6** to select the extra slots. The scroll wheel cycles through slots 1–4. |
 | **English and Simplified Chinese** | Both languages are included in one download. The panel follows the game language by default and uses English for other languages. |
 
@@ -55,6 +56,6 @@ dotnet build -c Release "-p:MaydayGameDir=C:\path\to\Mayday Airways Demo"
 
 Find the DLL under `bin\Release\net6.0`.
 
-To build both release ZIPs from a tag, run `powershell -ExecutionPolicy Bypass -File .\build-release.ps1 -Tag v1.8.0`. It downloads the pinned BepInEx build, checks its SHA-256, and writes `dist\MaydayFlightControls-Full.zip` and `dist\MaydayEngineBoost.zip`.
+To build both release ZIPs from a tag, run `powershell -ExecutionPolicy Bypass -File .\build-release.ps1 -Tag v1.9.0`. It downloads the pinned BepInEx build, checks its SHA-256, and writes `dist\MaydayFlightControls-Full.zip` and `dist\MaydayEngineBoost.zip`.
 
 </details>
