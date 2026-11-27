@@ -19,13 +19,16 @@ In co-op, the host uses the panel and gets the extra inventory slots. The contro
 
 ## Install
 
-1. In your Steam Library, right-click **Mayday Airways Demo** and select **Manage → Browse local files**.
-2. If BepInEx is already working for this demo, skip to step 4. Otherwise, follow the [BepInEx guide](https://docs.bepinex.dev/master/articles/user_guide/installation/unity_il2cpp.html) and download **BepInEx 6 for Unity IL2CPP, Windows x64**. Extract its contents into the folder that contains `MaydayAirways.exe`.
-3. Start the demo through Steam, wait for the main menu, then close it. This gives BepInEx time to set up its folders.
-4. Open the [latest GitHub release](https://github.com/Voraxi/MaydayEngineBoost/releases/latest) and download **MaydayEngineBoost.zip** under **Assets**. Extract it and copy `MaydayEngineBoost.dll` into the game's `BepInEx\plugins` folder.
-5. Launch the demo through Steam and press **F7**.
+Everything you need is in one download, including the BepInEx mod loader.
 
-**Updating?** Close the game, download the latest ZIP, and replace the DLL in `BepInEx\plugins`.
+1. Open the [latest release](https://github.com/Voraxi/MaydayEngineBoost/releases/latest) and download **MaydayFlightControls-Full.zip** under **Assets**.
+2. In your Steam Library, right-click **Mayday Airways Demo** and select **Manage → Browse local files**. The game folder opens. It's the folder that contains `MaydayAirways.exe`.
+3. Open the ZIP, select everything inside it (**Ctrl+A**) and drag it all into the game folder. If Windows asks about replacing files, choose **Replace**.
+4. Start the demo through Steam and press **F7**. The first start takes a minute or two longer than usual while BepInEx prepares itself.
+
+**Updating, or already have BepInEx?** Close the game, download **MaydayEngineBoost.zip** (the mod only), and copy `MaydayEngineBoost.dll` into the game's `BepInEx\plugins` folder, replacing the old one.
+
+The full ZIP includes [BepInEx](https://github.com/BepInEx/BepInEx) 6.0.0-be.793 for Unity IL2CPP (Windows x64), unchanged from the official build and licensed under LGPL-2.1.
 
 ## Change the panel language
 
@@ -33,13 +36,13 @@ After launching the mod once, close the game and open `BepInEx\config\local.mayd
 
 ## Troubleshooting
 
-- **F7 does nothing.** Check that you extracted the mod ZIP and copied the DLL to `BepInEx\plugins`. Confirm you installed the Unity IL2CPP Windows x64 version of BepInEx. Check `BepInEx\LogOutput.log` to see whether the mod loaded.
+- **F7 does nothing.** Check that `winhttp.dll` and the `BepInEx` folder sit directly next to `MaydayAirways.exe`, not inside an extra subfolder, and that `MaydayEngineBoost.dll` is in `BepInEx\plugins`. Then search `BepInEx\LogOutput.log` for `Mayday Flight Controls` to see whether the mod loaded.
 - **Fuel sliders are unavailable.** Start or load a flight as the host, then reopen the panel.
 - **Found a problem?** Report it in [GitHub Issues](https://github.com/Voraxi/MaydayEngineBoost/issues) with what you were doing and the relevant lines from `BepInEx\LogOutput.log`.
 
 ## Uninstall or return to four slots
 
-Empty slots 5 and 6 and close the game. Remove `MaydayEngineBoost.dll` from `BepInEx\plugins` to uninstall. To keep the mod and return to four slots, set `SlotCount = 4` under `[Inventory]` in the config file and relaunch.
+Empty slots 5 and 6 and close the game. Remove `MaydayEngineBoost.dll` from `BepInEx\plugins` to uninstall the mod. To also remove BepInEx, delete the `BepInEx` and `dotnet` folders, `winhttp.dll`, `doorstop_config.ini` and `.doorstop_version`; other BepInEx mods stop working if you do. To keep the mod and return to four slots, set `SlotCount = 4` under `[Inventory]` in the config file and relaunch.
 
 <details>
 <summary>Build from source</summary>
@@ -51,5 +54,7 @@ dotnet build -c Release "-p:MaydayGameDir=C:\path\to\Mayday Airways Demo"
 ```
 
 Find the DLL under `bin\Release\net6.0`.
+
+To build both release ZIPs from a tag, run `powershell -ExecutionPolicy Bypass -File .\build-release.ps1 -Tag v1.8.0`. It downloads the pinned BepInEx build, checks its SHA-256, and writes `dist\MaydayFlightControls-Full.zip` and `dist\MaydayEngineBoost.zip`.
 
 </details>

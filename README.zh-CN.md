@@ -19,13 +19,16 @@
 
 ## 安装步骤
 
-1. 在 Steam 库中右键点击 **Mayday Airways Demo**，依次选择 **管理 → 浏览本地文件**。
-2. 如果这个试玩版已经装好并能使用 BepInEx，直接看第 4 步。否则，按 [BepInEx 安装指南](https://docs.bepinex.dev/master/articles/user_guide/installation/unity_il2cpp.html) 下载 **BepInEx 6 的 Unity IL2CPP Windows x64 版**，将解压后的文件放进 `MaydayAirways.exe` 所在的文件夹。
-3. 从 Steam 启动试玩版，等主菜单出现后退出，让 BepInEx 生成所需文件夹。
-4. 打开 [GitHub 最新版本页面](https://github.com/Voraxi/MaydayEngineBoost/releases/latest)，在 **Assets** 下下载 **MaydayEngineBoost.zip**。解压后，把 `MaydayEngineBoost.dll` 复制到游戏目录下的 `BepInEx\plugins` 文件夹。
-5. 从 Steam 重新启动游戏，按 **F7** 打开模组面板。
+一个压缩包包含全部所需文件，包括 BepInEx 模组加载器。
 
-**更新模组**：关闭游戏，下载最新版压缩包，解压并替换 `BepInEx\plugins` 里的旧 DLL。
+1. 打开 [最新版本页面](https://github.com/Voraxi/MaydayEngineBoost/releases/latest)，在 **Assets** 下下载 **MaydayFlightControls-Full.zip**。
+2. 在 Steam 库中右键点击 **Mayday Airways Demo**，依次选择 **管理 → 浏览本地文件**，打开游戏文件夹（即 `MaydayAirways.exe` 所在的文件夹）。
+3. 打开压缩包，全选里面的所有内容（**Ctrl+A**），全部拖进游戏文件夹。如果 Windows 询问是否替换文件，选择 **替换**。
+4. 从 Steam 启动试玩版，按 **F7**。首次启动时 BepInEx 需要准备文件，会比平时多等一两分钟。
+
+**更新模组或已装有 BepInEx**：关闭游戏，下载 **MaydayEngineBoost.zip**（仅模组），把 `MaydayEngineBoost.dll` 复制到游戏目录下的 `BepInEx\plugins` 并替换旧文件。
+
+完整安装包内含官方原版 [BepInEx](https://github.com/BepInEx/BepInEx) 6.0.0-be.793（Unity IL2CPP，Windows x64），未作修改，采用 LGPL-2.1 许可证。
 
 ## 切换面板语言
 
@@ -33,12 +36,12 @@
 
 ## 常见问题
 
-- **按 F7 没反应。** 确认已解压模组，并把 DLL 放在 `BepInEx\plugins` 下。检查 BepInEx 是否为 Unity IL2CPP Windows x64 版。打开 `BepInEx\LogOutput.log` 可以查看模组是否加载。
+- **按 F7 没反应。** 确认 `winhttp.dll` 和 `BepInEx` 文件夹直接位于 `MaydayAirways.exe` 旁边（不是在多出来的子文件夹里），并且 `MaydayEngineBoost.dll` 在 `BepInEx\plugins` 下。然后在 `BepInEx\LogOutput.log` 中搜索 `Mayday Flight Controls`，查看模组是否加载。
 - **油量滑块不可用。** 以房主身份开始或载入一个航班，再打开面板。
 - **发现问题。** 可以在 [GitHub Issues](https://github.com/Voraxi/MaydayEngineBoost/issues) 说明操作步骤，并附上 `BepInEx\LogOutput.log` 中相关的几行。
 
 ## 卸载或恢复四格物品栏
 
-先取出第 5 和第 6 格里的物品，再退出游戏。要卸载，从 `BepInEx\plugins` 移除 `MaydayEngineBoost.dll`。要保留模组并恢复四格物品栏，在配置文件的 `[Inventory]` 下设置 `SlotCount = 4`，然后重启游戏。
+先取出第 5 和第 6 格里的物品，再退出游戏。要卸载模组，从 `BepInEx\plugins` 移除 `MaydayEngineBoost.dll`。如果还要卸载 BepInEx，删除 `BepInEx` 和 `dotnet` 文件夹、`winhttp.dll`、`doorstop_config.ini` 和 `.doorstop_version`；这样其他 BepInEx 模组也会失效。要保留模组并恢复四格物品栏，在配置文件的 `[Inventory]` 下设置 `SlotCount = 4`，然后重启游戏。
 
 如需从源码构建，请展开[英文说明](README.md)底部的 **Build from source**。
